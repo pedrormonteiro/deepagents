@@ -33,6 +33,55 @@ Run the CLI:
 deepagents
 ```
 
+## 🧪 Testing GitHub Copilot device flow
+
+Because `langchain-github-copilot` is not included in the CLI extras, install it
+separately in the same environment as `deepagents-cli` before testing:
+
+```bash
+pip install langchain-github-copilot
+```
+
+Add a GitHub Copilot provider to `~/.deepagents/config.toml`:
+
+```toml
+[models]
+default = "github_copilot:gpt-4o"
+
+[models.providers.github_copilot]
+class_path = "langchain_github_copilot.ChatGitHubCopilot"
+models = ["gpt-4o", "o1", "o3-mini", "claude-3.5-sonnet", "gemini-2.0-flash-001"]
+```
+
+### Automated tests
+
+Run the unit tests for the device-flow implementation:
+
+```bash
+cd libs/cli
+uv run --group test pytest tests/unit_tests/test_github_copilot_auth.py -q
+```
+
+### Manual smoke test
+
+1. Clear any existing token state:
+
+   ```bash
+   unset GITHUB_TOKEN
+   rm -f ~/.deepagents/github_copilot_token.json
+   ```
+
+2. Start the CLI with `deepagents`.
+3. Confirm the CLI shows the device-flow prompt, including the GitHub
+   verification URL and user code.
+4. Open the URL in your browser, enter the code, and complete authorization.
+5. Confirm the CLI reports successful authentication and can use
+   `github_copilot:gpt-4o`.
+6. Restart `deepagents` and confirm the browser prompt does not appear again
+   while the cached token is still valid.
+7. To test the on-demand path, remove the cache again and run
+   `/model github_copilot:gpt-4o` from an existing session.
+
 ## 🤔 What is this?
 
 The fastest way to start using Deep Agents. `deepagents-cli` is a pre-built coding agent in your terminal — similar to Claude Code or Cursor — powered by any LLM that supports tool calling. One install command and you're up and running, no code required.
