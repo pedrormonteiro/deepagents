@@ -189,6 +189,7 @@ PROVIDER_API_KEY_ENV: dict[str, str] = {
     "cohere": "COHERE_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "fireworks": "FIREWORKS_API_KEY",
+    "github_copilot": "GITHUB_TOKEN",
     "google_genai": "GOOGLE_API_KEY",
     "google_vertexai": "GOOGLE_CLOUD_PROJECT",
     "groq": "GROQ_API_KEY",
