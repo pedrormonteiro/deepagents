@@ -339,7 +339,7 @@ async def get_valid_copilot_token(cache_path: Path) -> str | None:
                 return copilot_token
         except CopilotAuthError:
             logger.debug("Silent Copilot token refresh failed", exc_info=True)
-        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        except (json.JSONDecodeError, OSError):
             logger.debug(
                 "Failed to read Copilot token cache for refresh",
                 exc_info=True,

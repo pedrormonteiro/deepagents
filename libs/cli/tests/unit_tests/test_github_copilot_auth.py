@@ -190,6 +190,7 @@ class TestPollForOauthToken:
             {"access_token": "gho_success"},
         ]
         call_count = 0
+        sleep = AsyncMock()
 
         def fake_post(_url: str, _payload: dict, **__: object) -> dict:
             nonlocal call_count
@@ -200,11 +201,12 @@ class TestPollForOauthToken:
         target = "deepagents_cli.github_copilot_auth._http_post_json"
         with (
             patch(target, side_effect=fake_post),
-            patch("asyncio.sleep", new=AsyncMock()),
+            patch("asyncio.sleep", new=sleep),
         ):
             token = await poll_for_oauth_token("dev123", interval=1, expires_in=30)
 
         assert token == "gho_success"
+        sleep.assert_any_call(1)
 
     async def test_raises_on_access_denied(self) -> None:
         with (
