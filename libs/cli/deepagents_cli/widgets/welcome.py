@@ -35,6 +35,10 @@ _TIPS: list[str] = [
     "Press ctrl+x to compose prompts in your external editor",
     "Press ctrl+u to delete to the start of the line in the chat input",
     "Type /update to check for and install updates",
+    (
+        "GitHub Copilot users: set model to github_copilot:gpt-4o "
+        "and authenticate via browser on first run"
+    ),
 ]
 """Rotating tips shown in the welcome footer.
 

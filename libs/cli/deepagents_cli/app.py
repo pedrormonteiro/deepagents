@@ -934,8 +934,21 @@ class DeepAgentsApp(App):
         # does the heavy langchain import + SDK init and may refine them
         # (e.g., context_limit from the model profile).
         if self._model_kwargs is not None:
-            from deepagents_cli.config import create_model
+            from deepagents_cli.config import create_model, settings
             from deepagents_cli.model_config import ModelConfigError, save_recent_model
+
+            # Ensure GitHub Copilot credentials before model creation.
+            if (
+                settings.model_provider == "github_copilot"
+                and not os.environ.get("GITHUB_TOKEN")
+                and not await self._ensure_github_copilot_auth()
+            ):
+                self.post_message(
+                    self.ServerStartFailed(
+                        error=RuntimeError("GitHub Copilot authentication failed.")
+                    )
+                )
+                return
 
             try:
                 result = create_model(**self._model_kwargs)
@@ -1148,6 +1161,86 @@ class DeepAgentsApp(App):
             )
         except Exception:
             logger.debug("Could not prewarm model caches", exc_info=True)
+
+    async def _ensure_github_copilot_auth(self) -> bool:
+        """Ensure GitHub Copilot credentials are available via device flow if needed.
+
+        Checks for a valid cached Copilot token first (including silent refresh via the
+        stored OAuth token). If no valid token is available the OAuth device flow is
+        started: the user code and verification URL are shown in the chat area, and this
+        method waits until the user authorizes (or the device code expires).
+
+        On success, `GITHUB_TOKEN` is set in the process environment so that
+        `langchain-github-copilot` picks it up automatically on the next
+        `create_model` call.
+
+        Returns:
+            `True` if a valid Copilot token was obtained, `False` otherwise.
+        """
+        from deepagents_cli.github_copilot_auth import (
+            CopilotAuthError,
+            exchange_for_copilot_token,
+            get_valid_copilot_token,
+            poll_for_oauth_token,
+            request_device_code,
+            save_copilot_token_cache,
+        )
+        from deepagents_cli.model_config import DEFAULT_CONFIG_DIR
+
+        cache_path = DEFAULT_CONFIG_DIR / "github_copilot_token.json"
+
+        # Try cached / silently refreshed token first.
+        try:
+            token = await get_valid_copilot_token(cache_path)
+        except Exception:
+            logger.debug("Copilot token cache check failed", exc_info=True)
+            token = None
+
+        if token:
+            os.environ["GITHUB_TOKEN"] = token
+            return True
+
+        # No valid cached token — run the device authorization flow.
+        await self._mount_message(
+            AppMessage(
+                "GitHub Copilot authentication required.\n"
+                "Requesting a device code from GitHub…"
+            )
+        )
+
+        try:
+            code_info = await request_device_code()
+        except CopilotAuthError as exc:
+            await self._mount_message(
+                ErrorMessage(f"GitHub Copilot auth failed: {exc}")
+            )
+            return False
+
+        await self._mount_message(
+            AppMessage(
+                f"Visit {code_info.verification_uri} in your browser\n"
+                f"and enter the code: {code_info.user_code}\n"
+                "Waiting for authorization…"
+            )
+        )
+
+        try:
+            oauth_token = await poll_for_oauth_token(
+                code_info.device_code, code_info.interval, code_info.expires_in
+            )
+            copilot_token, expires_at = await exchange_for_copilot_token(oauth_token)
+        except CopilotAuthError as exc:
+            await self._mount_message(
+                ErrorMessage(f"GitHub Copilot auth failed: {exc}")
+            )
+            return False
+
+        save_copilot_token_cache(cache_path, oauth_token, copilot_token, expires_at)
+        os.environ["GITHUB_TOKEN"] = copilot_token
+        await self._mount_message(
+            AppMessage("GitHub Copilot authenticated successfully.")
+        )
+        return True
 
     async def _check_for_updates(self) -> None:
         """Check PyPI for a newer version and optionally auto-update."""
@@ -3994,20 +4087,25 @@ class DeepAgentsApp(App):
             # Check credentials
             has_creds = has_provider_credentials(provider) if provider else None
             if has_creds is False and provider is not None:
-                env_var = get_credential_env_var(provider)
-                detail = (
-                    f"{env_var} is not set or is empty"
-                    if env_var
-                    else (
-                        f"provider '{provider}' is not recognized. "
-                        "Add it to ~/.deepagents/config.toml with an "
-                        "api_key_env field"
+                # For GitHub Copilot, run device flow instead of showing an error.
+                if provider == "github_copilot":
+                    if not await self._ensure_github_copilot_auth():
+                        return
+                else:
+                    env_var = get_credential_env_var(provider)
+                    detail = (
+                        f"{env_var} is not set or is empty"
+                        if env_var
+                        else (
+                            f"provider '{provider}' is not recognized. "
+                            "Add it to ~/.deepagents/config.toml with an "
+                            "api_key_env field"
+                        )
                     )
-                )
-                await self._mount_message(
-                    ErrorMessage(f"Missing credentials: {detail}")
-                )
-                return
+                    await self._mount_message(
+                        ErrorMessage(f"Missing credentials: {detail}")
+                    )
+                    return
             if has_creds is None and provider:
                 logger.debug(
                     "Credentials for provider '%s' cannot be verified;"

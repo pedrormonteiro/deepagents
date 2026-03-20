@@ -689,7 +689,18 @@ def has_provider_credentials(provider: str) -> bool | None:
     # Fall back to hardcoded well-known providers.
     env_var = PROVIDER_API_KEY_ENV.get(provider)
     if env_var:
-        return bool(os.environ.get(env_var))
+        if os.environ.get(env_var):
+            return True
+        # github_copilot may have a cached token that we can use directly.
+        if provider == "github_copilot":
+            from deepagents_cli.github_copilot_auth import load_cached_copilot_token
+
+            cache_path = DEFAULT_CONFIG_DIR / "github_copilot_token.json"
+            cached = load_cached_copilot_token(cache_path)
+            if cached is not None:
+                os.environ["GITHUB_TOKEN"] = cached[0]
+                return True
+        return False
 
     # Provider not found in config or hardcoded map — credential status is
     # unknown. The provider itself will report auth failures at
