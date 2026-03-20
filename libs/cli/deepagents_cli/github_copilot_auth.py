@@ -190,19 +190,15 @@ async def poll_for_oauth_token(
     poll_interval = interval
     while time.monotonic() < deadline:
         await asyncio.sleep(poll_interval)
-        try:
-            body = await asyncio.to_thread(
-                _http_post_json,
-                _ACCESS_TOKEN_URL,
-                {
-                    "client_id": _DEVICE_CLIENT_ID,
-                    "device_code": device_code,
-                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                },
-            )
-        except CopilotAuthError:
-            logger.debug("Token poll request failed", exc_info=True)
-            continue
+        body = await asyncio.to_thread(
+            _http_post_json,
+            _ACCESS_TOKEN_URL,
+            {
+                "client_id": _DEVICE_CLIENT_ID,
+                "device_code": device_code,
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            },
+        )
 
         if "access_token" in body:
             return str(body["access_token"])
@@ -329,7 +325,7 @@ async def get_valid_copilot_token(cache_path: Path) -> str | None:
     exists = await asyncio.to_thread(cache_path.exists)
     if exists:
         try:
-            text = await asyncio.to_thread(cache_path.read_text, "utf-8")
+            text = await asyncio.to_thread(cache_path.read_text, encoding="utf-8")
             data = json.loads(text)
             oauth_token = data.get("oauth_token")
             if oauth_token:
@@ -343,5 +339,10 @@ async def get_valid_copilot_token(cache_path: Path) -> str | None:
                 return copilot_token
         except CopilotAuthError:
             logger.debug("Silent Copilot token refresh failed", exc_info=True)
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            logger.debug(
+                "Failed to read Copilot token cache for refresh",
+                exc_info=True,
+            )
 
     return None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path  # noqa: TC003  # used in fixture type annotations
@@ -228,6 +229,17 @@ class TestPollForOauthToken:
         ):
             await poll_for_oauth_token("dev123", interval=1, expires_in=0)
 
+    async def test_surfaces_request_failures(self) -> None:
+        with (
+            patch(
+                "deepagents_cli.github_copilot_auth._http_post_json",
+                side_effect=CopilotAuthError("HTTP 503"),
+            ),
+            patch("asyncio.sleep", new=AsyncMock()),
+            pytest.raises(CopilotAuthError, match="HTTP 503"),
+        ):
+            await poll_for_oauth_token("dev123", interval=1, expires_in=30)
+
     async def test_slow_down_increases_interval(self) -> None:
         from deepagents_cli.github_copilot_auth import _SLOW_DOWN_INCREMENT
 
@@ -324,5 +336,16 @@ class TestGetValidCopilotToken:
             new=AsyncMock(side_effect=CopilotAuthError("401")),
         ):
             token = await get_valid_copilot_token(expired_cache)
+
+        assert token is None
+
+    async def test_returns_none_when_refresh_cache_is_corrupt(
+        self, cache_path: Path
+    ) -> None:
+        await asyncio.to_thread(
+            cache_path.write_text, "not valid json", encoding="utf-8"
+        )
+
+        token = await get_valid_copilot_token(cache_path)
 
         assert token is None
